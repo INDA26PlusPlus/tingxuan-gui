@@ -1,0 +1,8 @@
+[package]
+name = "gui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ggez = "0.10.0"
+chess = {git = "https://github.com/INDA26PlusPlus/curpas-chess"}
