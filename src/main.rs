@@ -60,21 +60,35 @@ impl ggez::event::EventHandler for State {
             let imgb_height = self.img_board.height() as f32;
             let board_x = (s_width - imgb_width) / 2.0;
             let board_y = (s_height - imgb_height) / 2.0;
-            let squ  = imgb_width/8.0;
+            // col and row of the mouse click
+            let col = ((mouse_posisiton.x - board_x)/ (imgb_width/8.0)).floor();
+            let row = ((mouse_posisiton.y - board_y)/ (imgb_width/8.0)).floor();
 
-            if let None = self.from_square {
-                // col and row of the mouse click
-                let col = ((mouse_posisiton.x - board_x)/squ).ceil();
-                let row = ((mouse_posisiton.y - board_y)/squ).ceil();
-                self.from_square = Some((col*row) as usize);
+            if mouse_posisiton.x < board_x || mouse_posisiton.y < board_y || mouse_posisiton.x > board_x+imgb_width || mouse_posisiton.y > board_y+imgb_width {
+                return Ok(())
+            }
+            else if let None = self.from_square {
+                self.from_square = Some((row*8.0+col) as usize);
             }
             else {
-                let col = ((mouse_posisiton.x - board_x)/squ).ceil();
-                let row = ((mouse_posisiton.y - board_y)/squ).ceil();
-                self.to_square = Some((col*row) as usize);
+                self.to_square = Some((row*8.0+col) as usize);
             }
 
-            
+            if let Some(_) = self.from_square {
+                if let Some(_) = self.to_square {
+                    // (start_row * 8 + start_column) * 64 + end_row * 8 + end_column
+                    let uci = move_to_uci(((self.from_square).unwrap() * 64 + (self.to_square).unwrap()) as i32);
+                    let board1 = self.board.clone();
+                    // will make move if legal!!
+                    let (result, board) = make_move(board1, &uci);
+                    self.board = board;
+                    // set the chosen squares to none again after making move
+                    if result == true {
+                        self.from_square = None;
+                        self.to_square = None;
+                    }
+                }
+            }
 
             println!("{:?} {:?}", self.from_square, self.to_square);
         }
