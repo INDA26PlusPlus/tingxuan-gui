@@ -1,11 +1,13 @@
 use std::slice::from_raw_parts;
 
-use ggez::{graphics::DrawMode::Fill, input::mouse, *};
+use ggez::{graphics::{DrawMode::Fill, Mesh}, input::mouse, *};
 use chess::*;
 use ggez::input::mouse::MouseButton;
 
 struct State {
     board: Vec<Vec<bool>>,
+    // images i want to use
+    img_bground: graphics::Image,
     img_board: graphics::Image,
     img_chess_pieces: graphics::Image,
     from_square: Option<usize>,
@@ -16,8 +18,14 @@ struct State {
 impl State {
     fn new(ctx: &mut Context) -> GameResult<State> {
         let mut boardd = vec![vec![false; 64]; 14];
+        // initialize board
         init(&mut boardd);
         let board= boardd;
+        // load pictures, if error return error else return image
+        let img_bground =  match graphics::Image::from_path(ctx, "/img_bground.png") {
+            Ok(val) => val,
+            Err(e) => {println!("{e}"); return Err(e);},
+        };
         let img_board = match graphics::Image::from_path(ctx, "/img_board.png") {
             Ok(val) => val,
             Err(e) => {println!("{e}"); return Err(e);},
@@ -26,10 +34,11 @@ impl State {
             Ok(val) => val,
             Err(e) => {println!("{e}"); return Err(e);},
         };
+        // start with no squares selected
         let from_square = None;
         let to_square = None;
         let turn = 0; // white starts
-        Ok(State {board, img_board, img_chess_pieces, from_square, to_square, turn})
+        Ok(State {board, img_bground, img_board, img_chess_pieces, from_square, to_square, turn})
     }
 
     fn draw_piece(&self, canvas: &mut ggez::graphics::Canvas, color: f32, piece: f32, x: f32, y: f32, squ: f32) {
@@ -55,13 +64,16 @@ impl State {
             ctx,
             graphics::DrawMode::fill(),
             graphics::Rect::new(0.0,0.0,squ,squ),
-            graphics::Color::new(0.0, 0.0, 300.0, 0.8)
+            graphics::Color::new(0.0, 0.0, 100.0, 0.8)
         );
-        canvas.draw(
-            &highlight.unwrap(),
-            graphics::DrawParam::new()
-                .dest([x,y])
-        );
+        if let Result::Ok(_) = highlight {
+            canvas.draw(
+                &highlight.unwrap(),
+                graphics::DrawParam::new()
+                    .dest([x,y])
+            );
+        }
+
     }
 }
 
@@ -143,6 +155,14 @@ impl ggez::event::EventHandler for State {
         let board_y = (s_height - imgb_height)/2.0;
         let squ = imgb_width/8.0;
 
+        // draw background first, bottom layer
+        canvas.draw (
+            &self.img_bground,
+            graphics::DrawParam::new()
+                .dest([0.0,0.0])
+                .scale([1.6,1.6])
+        );
+
         // draw image of chess board
         canvas.draw (
             &self.img_board,
@@ -174,8 +194,6 @@ impl ggez::event::EventHandler for State {
         canvas.finish(ctx)?;
         Ok(())
     }
-
-    
 }
 
 
