@@ -1,6 +1,4 @@
-use std::slice::from_raw_parts;
-
-use ggez::{graphics::{DrawMode::Fill, Mesh}, input::mouse, *};
+use ggez::{graphics, *};
 use chess::*;
 use ggez::input::mouse::MouseButton;
 
@@ -89,75 +87,13 @@ impl State {
             &self.img_jumino,
             graphics::DrawParam::new()
                 .dest([x,y])
-                .scale([0.1,0.1])
+                .scale([0.15,0.15])
         );
     }
 }
 
-
 impl ggez::event::EventHandler for State {
-    fn update(&mut self, ctx: &mut Context) -> GameResult {
-        if ctx.mouse.button_just_pressed(MouseButton::Left) {
-            // mouse position
-            let mouse_posisiton = ctx.mouse.position();
-            let (s_width, s_height) = ctx.gfx.drawable_size(); // returns drawable window size
-            let imgb_width = self.img_board.width() as f32;
-            let imgb_height = self.img_board.height() as f32;
-            let board_x = (s_width - imgb_width) / 2.0;
-            let board_y = (s_height - imgb_height) / 2.0;
-            // col and row of the mouse click
-            let col = ((mouse_posisiton.x - board_x)/ (imgb_width/8.0)).floor();
-            let row = ((mouse_posisiton.y - board_y)/ (imgb_width/8.0)).floor();
-            let piece = piece_at(&self.board, (row*8.0+col) as usize);
-
-            if mouse_posisiton.x < board_x || mouse_posisiton.y < board_y || mouse_posisiton.x > board_x+imgb_width || mouse_posisiton.y > board_y+imgb_width {
-                return Ok(());
-            }
-            else if let None = self.from_square {
-                if piece!=-1 && (piece/6)==self.turn {
-                    self.from_square = Some((row*8.0+col) as usize);
-                }
-            }
-            else {
-                self.to_square = Some((row*8.0+col) as usize);
-            }
-
-            if self.turn == 0 && self.from_square != None && piece_at(&self.board, self.from_square.unwrap())<6 {
-                if let Some(_) = self.to_square {
-                    // (start_row * 8 + start_column) * 64 + end_row * 8 + end_column
-                    let uci = move_to_uci(((self.from_square).unwrap() * 64 + (self.to_square).unwrap()) as i32);
-                    let board1 = self.board.clone();
-                    // will make move if legal!!
-                    let (result, board) = make_move(board1, &uci);
-                    self.board = board;
-                    // set the chosen squares to none again after making move
-                    self.from_square = None;
-                    self.to_square = None;
-                    if result == true {
-                        self.turn = 1;
-                    }
-                }
-            }
-            else if self.turn == 1 && self.from_square != None && piece_at(&self.board, self.from_square.unwrap())>5 {
-                if let Some(_) = self.to_square {
-                    // (start_row * 8 + start_column) * 64 + end_row * 8 + end_column
-                    let uci = move_to_uci(((self.from_square).unwrap() * 64 + (self.to_square).unwrap()) as i32);
-                    let board1 = self.board.clone();
-                    // will make move if legal!!
-                    let (result, board) = make_move(board1, &uci);
-                    self.board = board;
-                    // set the chosen squares to none again after making move
-                    self.from_square = None;
-                    self.to_square = None;
-                    if result == true {
-                        self.turn = 0;
-                    }
-                }
-            }
-            
-
-            println!("{:?} {:?}", self.from_square, self.to_square);
-        }
+    fn update(&mut self, _ctx: &mut Context) -> GameResult {
         Ok(())
     }
 
@@ -206,7 +142,7 @@ impl ggez::event::EventHandler for State {
             self.draw_piece(&mut canvas, color, piece, x, y, squ);
         }
         
-        // draw the legal moves at top
+        // draw the legal moves at top layer
         if self.from_square != None {
             // for each move in the legal moves
             for mv in find_legal_moves(&mut self.board, 0) {
@@ -221,8 +157,8 @@ impl ggez::event::EventHandler for State {
 
                 // if this legal move is for the piece we selected
                 if &uci[0..2] == format!("{}{}",convert[col0],8-row0) {
-                    let x = board_x+45.0 + (col1 as f32) * squ;
-                    let y = board_y+45.0 + (8.0 - row1) * squ;
+                    let x = board_x+29.0 + (col1 as f32) * squ;
+                    let y = board_y+33.0 + (8.0 - row1) * squ;
                     self.draw_jumino(&mut canvas, x, y);
                 }
             }
@@ -231,7 +167,74 @@ impl ggez::event::EventHandler for State {
         canvas.finish(ctx)?;
         Ok(())
     }
+
+    fn mouse_button_down_event(&mut self, _ctx: &mut Context, _button: MouseButton, _x: f32, _y: f32) -> Result<(), GameError> {
+        // if somewhere clicked on
+        if _button == MouseButton::Left {
+            // mouse position
+            let mouse_posisiton = _ctx.mouse.position();
+            let (s_width, s_height) = _ctx.gfx.drawable_size(); // returns drawable window size
+            let imgb_width = self.img_board.width() as f32;
+            let imgb_height = self.img_board.height() as f32;
+            let board_x = (s_width - imgb_width) / 2.0;
+            let board_y = (s_height - imgb_height) / 2.0;
+            // col and row of the mouse click
+            let col = ((mouse_posisiton.x - board_x)/ (imgb_width/8.0)).floor();
+            let row = ((mouse_posisiton.y - board_y)/ (imgb_width/8.0)).floor();
+            let piece = piece_at(&self.board, (row*8.0+col) as usize);
+
+            // outside the board then nothing happens
+            if mouse_posisiton.x < board_x || mouse_posisiton.y < board_y || mouse_posisiton.x > board_x+imgb_width || mouse_posisiton.y > board_y+imgb_width {
+                return Ok(());
+            }
+            else if let None = self.from_square {
+                if piece!=-1 && (piece/6)==self.turn {
+                    self.from_square = Some((row*8.0+col) as usize);
+                }
+            }
+            else {
+                self.to_square = Some((row*8.0+col) as usize);
+            }
+
+            if self.turn == 0 && self.from_square != None && piece_at(&self.board, self.from_square.unwrap())<6 {
+                if let Some(_) = self.to_square {
+                    // (start_row * 8 + start_column) * 64 + end_row * 8 + end_column
+                    let uci = move_to_uci(((self.from_square).unwrap() * 64 + (self.to_square).unwrap()) as i32);
+                    let board1 = self.board.clone();
+                    // will make move if legal!!
+                    let (result, board) = make_move(board1, &uci);
+                    self.board = board;
+                    // set the chosen squares to none again after making move
+                    self.from_square = None;
+                    self.to_square = None;
+                    if result == true {
+                        self.turn = 1;
+                    }
+                }
+            }
+            else if self.turn == 1 && self.from_square != None && piece_at(&self.board, self.from_square.unwrap())>5 {
+                if let Some(_) = self.to_square {
+                    // (start_row * 8 + start_column) * 64 + end_row * 8 + end_column
+                    let uci = move_to_uci(((self.from_square).unwrap() * 64 + (self.to_square).unwrap()) as i32);
+                    let board1 = self.board.clone();
+                    // will make move if legal!!
+                    let (result, board) = make_move(board1, &uci);
+                    self.board = board;
+                    // set the chosen squares to none again after making move
+                    self.from_square = None;
+                    self.to_square = None;
+                    if result == true {
+                        self.turn = 0;
+                    }
+                }
+            }
+
+            println!("{:?} {:?}", self.from_square, self.to_square);
+        }
+        Ok(())
+    }
 }
+
 
 
 pub fn main() {
@@ -251,7 +254,7 @@ pub fn main() {
     // let uci = move_to_uci(3981)
     // let (result, board) = make_move(board, "c1f4");
     // The result will tell you if the move was legal or not
-    /*
+    /* 
         0  = white pawn
         1  = white rook
         2  = white knight
