@@ -1,6 +1,6 @@
 use std::slice::from_raw_parts;
 
-use ggez::{input::mouse, *};
+use ggez::{graphics::DrawMode::Fill, input::mouse, *};
 use chess::*;
 use ggez::input::mouse::MouseButton;
 
@@ -32,7 +32,7 @@ impl State {
         Ok(State {board, img_board, img_chess_pieces, from_square, to_square, turn})
     }
 
-    fn draw_piece(&self, canvas: &mut ggez::graphics::Canvas, color: f32, piece: f32, x: f32, y: f32) {
+    fn draw_piece(&self, canvas: &mut ggez::graphics::Canvas, color: f32, piece: f32, x: f32, y: f32, squ: f32) {
         canvas.draw (
             &self.img_chess_pieces,
             graphics::DrawParam::new()
@@ -45,7 +45,22 @@ impl State {
                     1.0 / 2.0,
                 ))
                 .dest([x,y])
-                .scale([0.35,0.35])
+                .scale([squ/333.0,squ/333.0])
+        );
+    }
+
+    fn square_highlight(&self, canvas: &mut ggez::graphics::Canvas, ctx: &mut Context, x:f32, y:f32, squ: f32) {
+        // highlight
+        let highlight = graphics::Mesh::new_rectangle(
+            ctx,
+            graphics::DrawMode::fill(),
+            graphics::Rect::new(0.0,0.0,squ,squ),
+            graphics::Color::new(0.0, 0.0, 300.0, 0.8)
+        );
+        canvas.draw(
+            &highlight.unwrap(),
+            graphics::DrawParam::new()
+                .dest([x,y])
         );
     }
 }
@@ -65,50 +80,49 @@ impl ggez::event::EventHandler for State {
             // col and row of the mouse click
             let col = ((mouse_posisiton.x - board_x)/ (imgb_width/8.0)).floor();
             let row = ((mouse_posisiton.y - board_y)/ (imgb_width/8.0)).floor();
+            let piece = piece_at(&self.board, (row*8.0+col) as usize);
 
             if mouse_posisiton.x < board_x || mouse_posisiton.y < board_y || mouse_posisiton.x > board_x+imgb_width || mouse_posisiton.y > board_y+imgb_width {
-                return Ok(())
+                return Ok(());
             }
             else if let None = self.from_square {
-                self.from_square = Some((row*8.0+col) as usize);
+                if piece!=-1 && (piece/6)==self.turn {
+                    self.from_square = Some((row*8.0+col) as usize);
+                }
             }
             else {
                 self.to_square = Some((row*8.0+col) as usize);
             }
 
-            if self.turn == 0 && piece_at(&self.board, self.from_square.unwrap())<6 {
-                if let Some(_) = self.from_square {
-                    if let Some(_) = self.to_square {
-                        // (start_row * 8 + start_column) * 64 + end_row * 8 + end_column
-                        let uci = move_to_uci(((self.from_square).unwrap() * 64 + (self.to_square).unwrap()) as i32);
-                        let board1 = self.board.clone();
-                        // will make move if legal!!
-                        let (result, board) = make_move(board1, &uci);
-                        self.board = board;
-                        // set the chosen squares to none again after making move
-                        self.from_square = None;
-                        self.to_square = None;
-                        if result == true {
-                            self.turn = 1;
-                        }
+            if self.turn == 0 && self.from_square != None && piece_at(&self.board, self.from_square.unwrap())<6 {
+                if let Some(_) = self.to_square {
+                    // (start_row * 8 + start_column) * 64 + end_row * 8 + end_column
+                    let uci = move_to_uci(((self.from_square).unwrap() * 64 + (self.to_square).unwrap()) as i32);
+                    let board1 = self.board.clone();
+                    // will make move if legal!!
+                    let (result, board) = make_move(board1, &uci);
+                    self.board = board;
+                    // set the chosen squares to none again after making move
+                    self.from_square = None;
+                    self.to_square = None;
+                    if result == true {
+                        self.turn = 1;
                     }
                 }
             }
-            else if self.turn == 1 && piece_at(&self.board, self.from_square.unwrap())>5 {
-                if let Some(_) = self.from_square {
-                    if let Some(_) = self.to_square {
-                        // (start_row * 8 + start_column) * 64 + end_row * 8 + end_column
-                        let uci = move_to_uci(((self.from_square).unwrap() * 64 + (self.to_square).unwrap()) as i32);
-                        let board1 = self.board.clone();
-                        // will make move if legal!!
-                        let (result, board) = make_move(board1, &uci);
-                        self.board = board;
-                        // set the chosen squares to none again after making move
-                        self.from_square = None;
-                        self.to_square = None;
-                        if result == true {
-                            self.turn = 0;
-                        }
+            else if self.turn == 1 && self.from_square != None && piece_at(&self.board, self.from_square.unwrap())>5 {
+                if let Some(_) = self.to_square {
+                    // (start_row * 8 + start_column) * 64 + end_row * 8 + end_column
+                    let uci = move_to_uci(((self.from_square).unwrap() * 64 + (self.to_square).unwrap()) as i32);
+                    let board1 = self.board.clone();
+                    // will make move if legal!!
+                    let (result, board) = make_move(board1, &uci);
+                    self.board = board;
+                    // set the chosen squares to none again after making move
+                    self.from_square = None;
+                    self.to_square = None;
+                    if result == true {
+                        self.turn = 0;
                     }
                 }
             }
@@ -129,6 +143,7 @@ impl ggez::event::EventHandler for State {
         let board_y = (s_height - imgb_height)/2.0;
         let squ = imgb_width/8.0;
 
+        // draw image of chess board
         canvas.draw (
             &self.img_board,
             graphics::DrawParam::new()
@@ -136,27 +151,24 @@ impl ggez::event::EventHandler for State {
                 .scale([1.0,1.0])
         );
         
+        // highlight the chosen square
+        if self.from_square != None {
+            let pos = self.from_square.unwrap();
+            let col = (pos%8) as f32;
+            let row = (pos/8) as f32;
+            self.square_highlight(&mut canvas, ctx, board_x + col * squ, board_y + row * squ, squ);
+        }
+
+        // draw the pieces
         for i in 0..64 {
             let p = piece_at(&self.board, i as usize) as f32;
-            /*  0  = white pawn
-                1  = white rook
-                2  = white knight
-                3  = white bishop
-                4  = white queen
-                5  = white king
-                6  = black pawn
-                7  = black rook
-                8  = black knight
-                9  = black bishop
-                10 = black queen
-                11 = black king   */
             let color = (p/6.0).floor();
             let piece = 5.0-p%6.0;
             let col = (i%8) as f32;
             let row = (i/8) as f32;
             let x = board_x + col * squ;
             let y = board_y + row * squ;
-            self.draw_piece(&mut canvas, color, piece, x, y);
+            self.draw_piece(&mut canvas, color, piece, x, y, squ);
         }
         
         canvas.finish(ctx)?;
