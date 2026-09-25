@@ -10,6 +10,8 @@ struct State {
     img_bground: graphics::Image,
     img_board: graphics::Image,
     img_chess_pieces: graphics::Image,
+    img_jumino: graphics::Image,
+    // track of active squares
     from_square: Option<usize>,
     to_square: Option<usize>,
     turn: i32,
@@ -34,13 +36,18 @@ impl State {
             Ok(val) => val,
             Err(e) => {println!("{e}"); return Err(e);},
         };
+        let img_jumino = match graphics::Image::from_path(ctx, "/img_jumino.png") {
+            Ok(val) => val,
+            Err(e) => {println!("{e}"); return Err(e);},
+        };
         // start with no squares selected
         let from_square = None;
         let to_square = None;
         let turn = 0; // white starts
-        Ok(State {board, img_bground, img_board, img_chess_pieces, from_square, to_square, turn})
+        Ok(State {board, img_bground, img_board, img_chess_pieces, img_jumino, from_square, to_square, turn})
     }
 
+    // function to draw chess piece on square
     fn draw_piece(&self, canvas: &mut ggez::graphics::Canvas, color: f32, piece: f32, x: f32, y: f32, squ: f32) {
         canvas.draw (
             &self.img_chess_pieces,
@@ -58,6 +65,7 @@ impl State {
         );
     }
 
+    // funtion to highlight a square if selected
     fn square_highlight(&self, canvas: &mut ggez::graphics::Canvas, ctx: &mut Context, x:f32, y:f32, squ: f32) {
         // highlight
         let highlight = graphics::Mesh::new_rectangle(
@@ -75,8 +83,16 @@ impl State {
         }
 
     }
-}
 
+    fn draw_jumino(&self, canvas: &mut ggez::graphics::Canvas, x:f32, y:f32) {
+        canvas.draw (
+            &self.img_jumino,
+            graphics::DrawParam::new()
+                .dest([x,y])
+                .scale([0.1,0.1])
+        );
+    }
+}
 
 
 impl ggez::event::EventHandler for State {
@@ -155,14 +171,13 @@ impl ggez::event::EventHandler for State {
         let board_y = (s_height - imgb_height)/2.0;
         let squ = imgb_width/8.0;
 
-        // draw background first, bottom layer
+        // draw background, bottom layer
         canvas.draw (
             &self.img_bground,
             graphics::DrawParam::new()
                 .dest([0.0,0.0])
                 .scale([1.6,1.6])
         );
-
         // draw image of chess board
         canvas.draw (
             &self.img_board,
@@ -171,7 +186,7 @@ impl ggez::event::EventHandler for State {
                 .scale([1.0,1.0])
         );
         
-        // highlight the chosen square
+        // highlight the chosen square, draw possible moves
         if self.from_square != None {
             let pos = self.from_square.unwrap();
             let col = (pos%8) as f32;
@@ -179,7 +194,7 @@ impl ggez::event::EventHandler for State {
             self.square_highlight(&mut canvas, ctx, board_x + col * squ, board_y + row * squ, squ);
         }
 
-        // draw the pieces
+        // draw the chess pieces as in board
         for i in 0..64 {
             let p = piece_at(&self.board, i as usize) as f32;
             let color = (p/6.0).floor();
@@ -191,6 +206,28 @@ impl ggez::event::EventHandler for State {
             self.draw_piece(&mut canvas, color, piece, x, y, squ);
         }
         
+        // draw the legal moves at top
+        if self.from_square != None {
+            // for each move in the legal moves
+            for mv in find_legal_moves(&mut self.board, 0) {
+                let uci = move_to_uci(mv);
+                let convert: [char; 8] = ['a','b','c','d','e','f','g','h'];
+                let col0 = self.from_square.unwrap()%8;
+                let row0 = self.from_square.unwrap()/8;
+
+                // iterate to find index of letter in convert
+                let col1 = convert.iter().position(|&c| c == (uci[2..3]).parse().unwrap()).unwrap();
+                let row1: f32 = (&uci[3..4]).parse().unwrap();
+
+                // if this legal move is for the piece we selected
+                if &uci[0..2] == format!("{}{}",convert[col0],8-row0) {
+                    let x = board_x+45.0 + (col1 as f32) * squ;
+                    let y = board_y+45.0 + (8.0 - row1) * squ;
+                    self.draw_jumino(&mut canvas, x, y);
+                }
+            }
+        }
+
         canvas.finish(ctx)?;
         Ok(())
     }
@@ -206,6 +243,8 @@ pub fn main() {
 
     let state = State::new(&mut ctx).expect("fail");
     event::run(ctx, event_loop, state);
+
+    // TODO: show when in check, stalemate and checkmate end game, sound effects
 
     // legal moves: 0-4095 (start_row * 8 + start_column) * 64 + end_row * 8 + end_column
     // let moves = find_legal_moves(&mut board, 0);
