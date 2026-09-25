@@ -10,6 +10,7 @@ struct State {
     img_chess_pieces: graphics::Image,
     from_square: Option<usize>,
     to_square: Option<usize>,
+    turn: i32,
 }
 
 impl State {
@@ -27,7 +28,8 @@ impl State {
         };
         let from_square = None;
         let to_square = None;
-        Ok(State {board, img_board, img_chess_pieces, from_square, to_square})
+        let turn = 0; // white starts
+        Ok(State {board, img_board, img_chess_pieces, from_square, to_square, turn})
     }
 
     fn draw_piece(&self, canvas: &mut ggez::graphics::Canvas, color: f32, piece: f32, x: f32, y: f32) {
@@ -74,21 +76,43 @@ impl ggez::event::EventHandler for State {
                 self.to_square = Some((row*8.0+col) as usize);
             }
 
-            if let Some(_) = self.from_square {
-                if let Some(_) = self.to_square {
-                    // (start_row * 8 + start_column) * 64 + end_row * 8 + end_column
-                    let uci = move_to_uci(((self.from_square).unwrap() * 64 + (self.to_square).unwrap()) as i32);
-                    let board1 = self.board.clone();
-                    // will make move if legal!!
-                    let (result, board) = make_move(board1, &uci);
-                    self.board = board;
-                    // set the chosen squares to none again after making move
-                    if result == true {
+            if self.turn == 0 && piece_at(&self.board, self.from_square.unwrap())<6 {
+                if let Some(_) = self.from_square {
+                    if let Some(_) = self.to_square {
+                        // (start_row * 8 + start_column) * 64 + end_row * 8 + end_column
+                        let uci = move_to_uci(((self.from_square).unwrap() * 64 + (self.to_square).unwrap()) as i32);
+                        let board1 = self.board.clone();
+                        // will make move if legal!!
+                        let (result, board) = make_move(board1, &uci);
+                        self.board = board;
+                        // set the chosen squares to none again after making move
                         self.from_square = None;
                         self.to_square = None;
+                        if result == true {
+                            self.turn = 1;
+                        }
                     }
                 }
             }
+            else if self.turn == 1 && piece_at(&self.board, self.from_square.unwrap())>5 {
+                if let Some(_) = self.from_square {
+                    if let Some(_) = self.to_square {
+                        // (start_row * 8 + start_column) * 64 + end_row * 8 + end_column
+                        let uci = move_to_uci(((self.from_square).unwrap() * 64 + (self.to_square).unwrap()) as i32);
+                        let board1 = self.board.clone();
+                        // will make move if legal!!
+                        let (result, board) = make_move(board1, &uci);
+                        self.board = board;
+                        // set the chosen squares to none again after making move
+                        self.from_square = None;
+                        self.to_square = None;
+                        if result == true {
+                            self.turn = 0;
+                        }
+                    }
+                }
+            }
+            
 
             println!("{:?} {:?}", self.from_square, self.to_square);
         }
@@ -114,6 +138,18 @@ impl ggez::event::EventHandler for State {
         
         for i in 0..64 {
             let p = piece_at(&self.board, i as usize) as f32;
+            /*  0  = white pawn
+                1  = white rook
+                2  = white knight
+                3  = white bishop
+                4  = white queen
+                5  = white king
+                6  = black pawn
+                7  = black rook
+                8  = black knight
+                9  = black bishop
+                10 = black queen
+                11 = black king   */
             let color = (p/6.0).floor();
             let piece = 5.0-p%6.0;
             let col = (i%8) as f32;
