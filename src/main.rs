@@ -1,15 +1,22 @@
 use ggez::{graphics, *};
 use chess::*;
 use ggez::input::mouse::MouseButton;
+use ggez::audio::SoundSource;
 
 struct State {
     board: Vec<Vec<bool>>,
-    // images i want to use
+    // images
     img_bground: graphics::Image,
     img_board: graphics::Image,
     img_chess_pieces: graphics::Image,
     img_jumino: graphics::Image,
-    // track of active squares
+    // music and sound
+    bgm_danger: ggez::audio::Source,
+    sfx_move: ggez::audio::Source,
+    sfx_select: ggez::audio::Source,
+    playlist: [ggez::audio::Source; 4],
+    playing: usize,
+    // keep track of active squares
     from_square: Option<usize>,
     to_square: Option<usize>,
     turn: i32,
@@ -21,7 +28,8 @@ impl State {
         // initialize board
         init(&mut boardd);
         let board= boardd;
-        // load pictures, if error return error else return image
+
+        // region: load pictures, if error return error else return image
         let img_bground =  match graphics::Image::from_path(ctx, "/img_bground.png") {
             Ok(val) => val,
             Err(e) => {println!("{e}"); return Err(e);},
@@ -38,11 +46,46 @@ impl State {
             Ok(val) => val,
             Err(e) => {println!("{e}"); return Err(e);},
         };
+        // endregion
+
+        // region: load sound and music
+        let bgm1 = match ggez::audio::Source::new(ctx, "/bgm1.mp3") {
+            Ok(val) => val,
+            Err(e) => {println!("{e}"); return Err(e);},
+        };
+        let bgm2 = match ggez::audio::Source::new(ctx, "/bgm2.mp3") {
+            Ok(val) => val,
+            Err(e) => {println!("{e}"); return Err(e);},
+        };
+        let bgm3 = match ggez::audio::Source::new(ctx, "/bgm3.mp3") {
+            Ok(val) => val,
+            Err(e) => {println!("{e}"); return Err(e);},
+        };
+        let bgm4 = match ggez::audio::Source::new(ctx, "/bgm4.mp3") {
+            Ok(val) => val,
+            Err(e) => {println!("{e}"); return Err(e);},
+        };
+        let bgm_danger = match ggez::audio::Source::new(ctx, "/bgm_danger.mp3") {
+            Ok(val) => val,
+            Err(e) => {println!("{e}"); return Err(e);},
+        };
+        let sfx_move = match ggez::audio::Source::new(ctx, "/sfx_move.wav") {
+            Ok(val) => val,
+            Err(e) => {println!("{e}"); return Err(e);},
+        };
+        let sfx_select = match ggez::audio::Source::new(ctx, "/sfx_select.wav") {
+            Ok(val) => val,
+            Err(e) => {println!("{e}"); return Err(e);},
+        };
+        // endregion
+        let playlist = [bgm4,bgm1,bgm2,bgm3];
+        let playing = 0;
+        
         // start with no squares selected
         let from_square = None;
         let to_square = None;
         let turn = 0; // white starts
-        Ok(State {board, img_bground, img_board, img_chess_pieces, img_jumino, from_square, to_square, turn})
+        Ok(State {board, img_bground, img_board, img_chess_pieces, img_jumino, bgm_danger, sfx_move, sfx_select,from_square, playlist, playing, to_square, turn})
     }
 
     // function to draw chess piece on square
@@ -94,6 +137,10 @@ impl State {
 
 impl ggez::event::EventHandler for State {
     fn update(&mut self, _ctx: &mut Context) -> GameResult {
+        if self.playlist[self.playing].stopped() {
+            self.playing += 1;
+            self.playlist[self.playing].play();
+        }
         Ok(())
     }
 
@@ -190,10 +237,12 @@ impl ggez::event::EventHandler for State {
             else if let None = self.from_square {
                 if piece!=-1 && (piece/6)==self.turn {
                     self.from_square = Some((row*8.0+col) as usize);
+                    self.sfx_select.play();
                 }
             }
             else {
                 self.to_square = Some((row*8.0+col) as usize);
+                self.sfx_move.play();
             }
 
             if self.turn == 0 && self.from_square != None && piece_at(&self.board, self.from_square.unwrap())<6 {
@@ -236,10 +285,9 @@ impl ggez::event::EventHandler for State {
 }
 
 
-
 pub fn main() {
     let c = conf::Conf::new();
-    let (mut ctx, event_loop) = ContextBuilder::new("hello_ggez", "awesome_person")
+    let (mut ctx, event_loop) = ContextBuilder::new("chessdew valley", "tingxuan")
         .default_conf(c)
         .build()
         .unwrap();
