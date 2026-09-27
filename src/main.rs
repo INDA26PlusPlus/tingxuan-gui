@@ -102,6 +102,7 @@ impl State {
             Err(e) => {println!("{e}"); return Err(e);},
         };
         // endregion
+
         let playlist = [bgm4,bgm1,bgm2,bgm3];
         let playing = 0;
         // start with no squares selected
@@ -161,8 +162,6 @@ impl State {
                 .scale([0.15,0.15])
         );
     }
-
-
 }
 
 impl ggez::event::EventHandler for State {
