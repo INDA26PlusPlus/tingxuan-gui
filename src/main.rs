@@ -10,6 +10,10 @@ struct State {
     img_board: graphics::Image,
     img_chess_pieces: graphics::Image,
     img_jumino: graphics::Image,
+    img_win_black: graphics::Image,
+    img_win_white: graphics::Image,
+    img_draw: graphics::Image,
+    img_letter: graphics::Image,
     // music and sound
     bgm_danger: ggez::audio::Source,
     sfx_move: ggez::audio::Source,
@@ -21,7 +25,9 @@ struct State {
     to_square: Option<usize>,
     turn: i32,
     white_check: bool,
-    black_check: bool
+    black_check: bool,
+    white_stalemate: bool,
+    black_stalemate: bool
 }
 
 impl State {
@@ -45,6 +51,22 @@ impl State {
             Err(e) => {println!("{e}"); return Err(e);},
         };
         let img_jumino = match graphics::Image::from_path(ctx, "/img_jumino.png") {
+            Ok(val) => val,
+            Err(e) => {println!("{e}"); return Err(e);},
+        };
+        let img_win_black = match graphics::Image::from_path(ctx, "/img_win_black.png") {
+            Ok(val) => val,
+            Err(e) => {println!("{e}"); return Err(e);},
+        };
+        let img_win_white = match graphics::Image::from_path(ctx, "/img_win_white.png") {
+            Ok(val) => val,
+            Err(e) => {println!("{e}"); return Err(e);},
+        };
+        let img_draw = match graphics::Image::from_path(ctx, "/img_draw.png") {
+            Ok(val) => val,
+            Err(e) => {println!("{e}"); return Err(e);},
+        };
+        let img_letter = match graphics::Image::from_path(ctx, "/img_letter.png") {
             Ok(val) => val,
             Err(e) => {println!("{e}"); return Err(e);},
         };
@@ -88,8 +110,10 @@ impl State {
         let turn = 0; // white starts
         let white_check = false;
         let black_check = false;
+        let white_stalemate = false;
+        let black_stalemate = false;
 
-        Ok(State {board, img_bground, img_board, img_chess_pieces, img_jumino, bgm_danger, sfx_move, sfx_select,from_square, playlist, playing, to_square, turn,white_check,black_check})
+        Ok(State {board, img_bground, img_board, img_chess_pieces, img_jumino, img_win_black, img_win_white, img_draw, img_letter, bgm_danger, sfx_move, sfx_select,from_square, playlist, playing, to_square, turn, white_check, black_check, white_stalemate, black_stalemate})
     }
 
     // function to draw chess piece on square
@@ -159,7 +183,7 @@ impl ggez::event::EventHandler for State {
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
         let (s_width, s_height) = ctx.gfx.drawable_size(); // returns drawable window size
         let mut canvas = graphics::Canvas::from_frame(ctx, ggez::graphics::Color::WHITE);
-
+        
         let imgb_width = self.img_board.width() as f32;
         let imgb_height = self.img_board.height() as f32;
         let board_x = (s_width - imgb_width)/2.0;
@@ -180,7 +204,16 @@ impl ggez::event::EventHandler for State {
                 .dest([(s_width-imgb_width)/2.0,(s_height-imgb_height)/2.0])
                 .scale([1.0,1.0])
         );
-        
+        // draw letter to the left
+        let imgl_width = self.img_letter.width() as f32;
+        let imgl_height = self.img_letter.height() as f32;
+        canvas.draw (
+            &self.img_letter,
+            graphics::DrawParam::new()
+                .dest([(s_width-imgl_width)/17.0,(s_height-imgl_height)/2.0])
+                .scale([1.0,1.0])
+        );
+
         // highlight the chosen square
         if self.from_square != None {
             let pos = self.from_square.unwrap();
@@ -226,10 +259,10 @@ impl ggez::event::EventHandler for State {
             self.draw_piece(&mut canvas, color, piece, x, y, squ);
         }
         
-        // draw the legal moves at top layer
+        // draw legal moves 
         if self.from_square != None {
             // for each move in the legal moves
-            for mv in find_legal_moves(&mut self.board, self.turn+1) { // 0->1, 1->2
+            for mv in find_legal_moves(&mut self.board, 0) { // 0->1, 1->2
                 let uci = move_to_uci(mv);
                 let convert: [char; 8] = ['a','b','c','d','e','f','g','h'];
                 let col0 = self.from_square.unwrap()%8;
@@ -246,6 +279,40 @@ impl ggez::event::EventHandler for State {
                     self.draw_jumino(&mut canvas, x, y);
                 }
             }
+        }
+
+        // ending screens at top layer
+        // stalemate + check -> opponent win
+        if self.white_check && self.white_stalemate {
+            let winb_width = self.img_win_black.width() as f32;
+            let winb_height = self.img_win_black.height() as f32;
+            canvas.draw (
+                &self.img_win_black,
+                graphics::DrawParam::new()
+                    .dest([(s_width-winb_width)/2.0,(s_height-winb_height)/2.0])
+                    .scale([1.0,1.0])
+            );
+        }
+        else if self.black_check && self.black_stalemate {
+            let winw_width = self.img_win_white.width() as f32;
+            let winw_height = self.img_win_white.height() as f32;
+            canvas.draw (
+                &self.img_win_white,
+                graphics::DrawParam::new()
+                    .dest([(s_width-winw_width)/2.0,(s_height-winw_height)/2.0])
+                    .scale([1.0,1.0])
+            );
+        }
+        // stalemate -> draw
+        else if self.black_stalemate || self.white_stalemate {
+            let draw_width = self.img_draw.width() as f32;
+            let draw_height = self.img_draw.height() as f32;
+            canvas.draw (
+                &self.img_draw,
+                graphics::DrawParam::new()
+                    .dest([(s_width-draw_width)/2.0,(s_height-draw_height)/2.0])
+                    .scale([1.0,1.0])
+            );
         }
 
         canvas.finish(ctx)?;
@@ -298,13 +365,13 @@ impl ggez::event::EventHandler for State {
                     self.turn = (self.turn+1)%2; // next player turn
                     self.black_check = false; // reset check values
                     self.white_check = false;
+                    let convert: [char; 8] = ['a','b','c','d','e','f','g','h'];
                     for i in 0..64 { 
                         let col = i%8;
                         let row = i/8;
-                        let convert: [char; 8] = ['a','b','c','d','e','f','g','h'];
-                        // if black king check
+                        //let moves = find_legal_moves(&mut self.board, 0);
                         if piece_at(&self.board, i as usize) == 11 {
-                            for mv in find_legal_moves(&mut self.board, 1) { // 1 skips black pieces
+                            for mv in find_legal_moves(&mut self.board, 1) {
                                 let uci = move_to_uci(mv);
                                 let col1 = convert.iter().position(|&c| c == (uci[2..3]).parse().unwrap()).unwrap();
                                 let row1: usize = (&uci[3..4]).parse().unwrap();
@@ -319,7 +386,7 @@ impl ggez::event::EventHandler for State {
                         }
                         // if white king check
                         else if piece_at(&self.board, i as usize) == 5 {
-                            for mv in find_legal_moves(&mut self.board, 2) { // 2 skips white pieces
+                            for mv in find_legal_moves(&mut self.board, 2) {
                                 let uci = move_to_uci(mv);
                                 let col1 = convert.iter().position(|&c| c == (uci[2..3]).parse().unwrap()).unwrap();
                                 let row1: usize = (&uci[3..4]).parse().unwrap();
@@ -332,6 +399,16 @@ impl ggez::event::EventHandler for State {
                                 }
                             }
                         }
+                    }
+                    self.black_stalemate = true;
+                    self.white_stalemate = true;
+                    for mv in find_legal_moves(&mut self.board, 0) {
+                        if !self.black_stalemate && !self.white_stalemate {break}
+                        let uci = move_to_uci(mv);
+                        let col = convert.iter().position(|&c| c == (uci[0..1]).parse().unwrap()).unwrap();
+                        let row: usize = (&uci[1..2]).parse().unwrap();
+                        if piece_at(&self.board, (8-row)*8+col) < 6 && piece_at(&self.board, (8-row)*8+col) != -1 {self.white_stalemate = false;} // if white piece can move
+                        else if piece_at(&self.board, (8-row)*8+col) > 5 {self.black_stalemate = false;} // if black piece can move
                     }
                     self.sfx_move.play(); // play sound effect lastly
                 }
@@ -350,25 +427,3 @@ pub fn main() -> GameResult {
     let state = State::new(&mut ctx)?;
     event::run(ctx, event_loop, state) // return gameresult from this
 }
-
-// TODO: stalemate and checkmate end game
-
-// legal moves: 0-4095 (start_row * 8 + start_column) * 64 + end_row * 8 + end_column
-// let moves = find_legal_moves(&mut board, 0);
-// let uci = move_to_uci(3981)
-// let (result, board) = make_move(board, "c1f4");
-// The result will tell you if the move was legal or not
-/* 
-    0  = white pawn
-    1  = white rook
-    2  = white knight
-    3  = white bishop
-    4  = white queen
-    5  = white king
-    6  = black pawn
-    7  = black rook
-    8  = black knight
-    9  = black bishop
-    10 = black queen
-    11 = black king 
-*/
