@@ -1,10 +1,20 @@
+// region: import
 use ggez::{graphics, *};
 use chess::*;
 use ggez::input::mouse::MouseButton;
 use ggez::audio::SoundSource;
+use std::fmt::Error;
+use std::net::{TcpListener, TcpStream};
+use std::env;
+use std::io::{ErrorKind, prelude::*};
+// endregion
 
 struct State {
     board: Vec<Vec<bool>>,
+    my_color: i32,
+    stream: TcpStream,
+    buffer: String,
+    new_board: Vec<Vec<bool>>,
     // images
     img_bground: graphics::Image,
     img_board: graphics::Image,
@@ -31,11 +41,15 @@ struct State {
 }
 
 impl State {
-    fn new(ctx: &mut Context) -> GameResult<State> {
+    fn new(ctx: &mut Context, instream: TcpStream, color: i32) -> GameResult<State> {
         let mut boardd = vec![vec![false; 64]; 14];
         // initialize board
         init(&mut boardd);
         let board= boardd;
+        let my_color = color; 
+        let stream = instream;
+        let buffer= String::new();
+        let new_board = board.clone(); // clone as i cannot borrow or move it
 
         // region: load pictures, if error return error else return image
         let img_bground =  match graphics::Image::from_path(ctx, "/img_bground.png") {
@@ -114,7 +128,7 @@ impl State {
         let white_stalemate = false;
         let black_stalemate = false;
 
-        Ok(State {board, img_bground, img_board, img_chess_pieces, img_jumino, img_win_black, img_win_white, img_draw, img_letter, bgm_danger, sfx_move, sfx_select,from_square, playlist, playing, to_square, turn, white_check, black_check, white_stalemate, black_stalemate})
+        Ok(State {board, my_color, stream, buffer, new_board, img_bground, img_board, img_chess_pieces, img_jumino, img_win_black, img_win_white, img_draw, img_letter, bgm_danger, sfx_move, sfx_select,from_square, playlist, playing, to_square, turn, white_check, black_check, white_stalemate, black_stalemate})
     }
 
     // function to draw chess piece on square
@@ -176,6 +190,152 @@ impl ggez::event::EventHandler for State {
                 self.playlist[self.playing].resume();
             }
         }
+
+        // try to read response
+        let mut data = [0u8; 128]; // all set to 0
+        match self.stream.read(&mut data) {
+            Ok(n) => {
+                for i in 0..n {
+                    if data[i] == b'\n' { // if the message is full
+                        if self.buffer == "OK" || self.buffer == "CHECKMATE" || self.buffer == "STALEMATE" {
+                            self.board = self.new_board.clone();
+                            self.turn = (self.turn+1)%2; // next player turn
+                            self.black_check = false; // reset check values
+                            self.white_check = false;
+                            let convert: [char; 8] = ['a','b','c','d','e','f','g','h'];
+
+                            for i in 0..64 { 
+                                let col = i%8;
+                                let row = i/8;
+
+                                // if black king check
+                                if piece_at(&self.board, i as usize) == 11 {
+                                    for mv in find_legal_moves(&mut self.board, 1) {
+                                        let uci = move_to_uci(mv);
+                                        let col1 = convert.iter().position(|&c| c == (uci[2..3]).parse().unwrap()).unwrap();
+                                        let row1: usize = (&uci[3..4]).parse().unwrap();
+                                        if col == col1 && row == 8-row1 {
+                                            self.black_check = true;
+                                            self.playlist[self.playing].pause();
+                                            self.bgm_danger.set_repeat(true);
+                                            self.bgm_danger.play();
+                                            break;
+                                        }
+                                    }
+                                }
+                                // if white king check
+                                else if piece_at(&self.board, i as usize) == 5 {
+                                    for mv in find_legal_moves(&mut self.board, 2) {
+                                        let uci = move_to_uci(mv);
+                                        let col1 = convert.iter().position(|&c| c == (uci[2..3]).parse().unwrap()).unwrap();
+                                        let row1: usize = (&uci[3..4]).parse().unwrap();
+                                        if col == col1 && row == 8-row1 {
+                                            self.white_check = true;
+                                            self.playlist[self.playing].pause();
+                                            self.bgm_danger.set_repeat(true);
+                                            self.bgm_danger.play();
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+
+                            self.black_stalemate = true;
+                            self.white_stalemate = true;
+                            for mv in find_legal_moves(&mut self.board, 0) {
+                                if !self.black_stalemate && !self.white_stalemate {break}
+                                let uci = move_to_uci(mv);
+                                let col = convert.iter().position(|&c| c == (uci[0..1]).parse().unwrap()).unwrap();
+                                let row: usize = (&uci[1..2]).parse().unwrap();
+                                if piece_at(&self.board, (8-row)*8+col) < 6 && piece_at(&self.board, (8-row)*8+col) != -1 {self.white_stalemate = false;} // if white piece can move
+                                else if piece_at(&self.board, (8-row)*8+col) > 5 {self.black_stalemate = false;} // if black piece can move
+                            }
+                            self.sfx_move.play(); // play sound effect lastly
+                        }
+
+                        else if self.buffer == "REJECT" {println!("move rejected");}
+
+                        else {
+                            let mut uci = self.buffer[0..4].to_lowercase(); // lowercase for the make_move
+                            if &self.buffer[4..5] != "-" {uci += &self.buffer[4..5].to_lowercase()}; // if promotion
+                            let (result, board) = make_move(self.board.clone(), &uci); 
+                            // if the move is legal, send OK
+                            if result {
+                                self.black_check = false; // reset check values
+                                self.white_check = false;
+                                let convert: [char; 8] = ['a','b','c','d','e','f','g','h'];
+                                for i in 0..64 { 
+                                    let col = i%8;
+                                    let row = i/8;
+                                    // if black king check
+                                    if piece_at(&self.board, i as usize) == 11 {
+                                        for mv in find_legal_moves(&mut self.board, 1) {
+                                            let uci = move_to_uci(mv);
+                                            let col1 = convert.iter().position(|&c| c == (uci[2..3]).parse().unwrap()).unwrap();
+                                            let row1: usize = (&uci[3..4]).parse().unwrap();
+                                            if col == col1 && row == 8-row1 {
+                                                self.black_check = true;
+                                                self.playlist[self.playing].pause();
+                                                self.bgm_danger.set_repeat(true);
+                                                self.bgm_danger.play();
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    // if white king check
+                                    else if piece_at(&self.board, i as usize) == 5 {
+                                        for mv in find_legal_moves(&mut self.board, 2) {
+                                            let uci = move_to_uci(mv);
+                                            let col1 = convert.iter().position(|&c| c == (uci[2..3]).parse().unwrap()).unwrap();
+                                            let row1: usize = (&uci[3..4]).parse().unwrap();
+                                            if col == col1 && row == 8-row1 {
+                                                self.white_check = true;
+                                                self.playlist[self.playing].pause();
+                                                self.bgm_danger.set_repeat(true);
+                                                self.bgm_danger.play();
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                                self.black_stalemate = true;
+                                self.white_stalemate = true;
+                                for mv in find_legal_moves(&mut self.board, 0) {
+                                    if !self.black_stalemate && !self.white_stalemate {break}
+                                    let uci = move_to_uci(mv);
+                                    let col = convert.iter().position(|&c| c == (uci[0..1]).parse().unwrap()).unwrap();
+                                    let row: usize = (&uci[1..2]).parse().unwrap();
+                                    if piece_at(&self.board, (8-row)*8+col) < 6 && piece_at(&self.board, (8-row)*8+col) != -1 {self.white_stalemate = false;} // if white piece can move
+                                    else if piece_at(&self.board, (8-row)*8+col) > 5 {self.black_stalemate = false;} // if black piece can move
+                                }
+
+                                if self.turn == 0 && self.white_stalemate {
+                                    if self.white_check {self.stream.write(b"CHECKMATE\n")?;}
+                                    else {self.stream.write(b"STALEMATE\n")?;}
+                                }
+                                else if self.turn == 1 && self.black_stalemate {
+                                    if self.black_check {self.stream.write(b"CHECKMATE\n")?;}
+                                    else {self.stream.write(b"STALEMATE\n")?;}
+                                }
+                                else {
+                                    self.stream.write(b"OK\n")?;
+                                }
+                                self.board=board; 
+                                self.sfx_move.play();
+                                self.turn = (self.turn+1)%2;
+                            }
+                            // else illegal, REJECT
+                            else {self.stream.write(b"REJECT\n")?;}
+                        }
+
+                        self.buffer=String::new(); // message is full, reset buffer
+                    }
+                    else {self.buffer.push(data[i] as char)}}
+                },  
+            Err(e) if e.kind() == ErrorKind::WouldBlock => {},
+            Err(e) => {return Err(e.into())}
+        }
+
         Ok(())
     }
 
@@ -320,7 +480,7 @@ impl ggez::event::EventHandler for State {
 
     fn mouse_button_down_event(&mut self, _ctx: &mut Context, _button: MouseButton, _x: f32, _y: f32) -> Result<(), GameError> {
         // if somewhere clicked on
-        if _button == MouseButton::Left {
+        if _button == MouseButton::Left && self.my_color == self.turn {
             // mouse position
             let mouse_posisiton = _ctx.mouse.position();
             let (s_width, s_height) = _ctx.gfx.drawable_size(); // returns drawable window size
@@ -354,62 +514,26 @@ impl ggez::event::EventHandler for State {
             if self.from_square != None && piece_at(&self.board, self.from_square.unwrap())/6 == self.turn && self.to_square!=None{
                 // (start_row * 8 + start_column) * 64 + end_row * 8 + end_column
                 let uci = move_to_uci(((self.from_square).unwrap() * 64 + (self.to_square).unwrap()) as i32);
-                let (result, board) = make_move(self.board.clone(), &uci); // make move if legal
-                self.board = board;
+                // is move legal?
+                let (result, board) = make_move(self.board.clone(), &uci); 
                 // reset selected squares
                 self.from_square = None;
                 self.to_square = None;
-                // if move successful
-                if result == true {
-                    self.turn = (self.turn+1)%2; // next player turn
-                    self.black_check = false; // reset check values
-                    self.white_check = false;
-                    let convert: [char; 8] = ['a','b','c','d','e','f','g','h'];
-                    for i in 0..64 { 
-                        let col = i%8;
-                        let row = i/8;
-                        //let moves = find_legal_moves(&mut self.board, 0);
-                        if piece_at(&self.board, i as usize) == 11 {
-                            for mv in find_legal_moves(&mut self.board, 1) {
-                                let uci = move_to_uci(mv);
-                                let col1 = convert.iter().position(|&c| c == (uci[2..3]).parse().unwrap()).unwrap();
-                                let row1: usize = (&uci[3..4]).parse().unwrap();
-                                if col == col1 && row == 8-row1 {
-                                    self.black_check = true;
-                                    self.playlist[self.playing].pause();
-                                    self.bgm_danger.set_repeat(true);
-                                    self.bgm_danger.play();
-                                    break;
-                                }
-                            }
-                        }
-                        // if white king check
-                        else if piece_at(&self.board, i as usize) == 5 {
-                            for mv in find_legal_moves(&mut self.board, 2) {
-                                let uci = move_to_uci(mv);
-                                let col1 = convert.iter().position(|&c| c == (uci[2..3]).parse().unwrap()).unwrap();
-                                let row1: usize = (&uci[3..4]).parse().unwrap();
-                                if col == col1 && row == 8-row1 {
-                                    self.white_check = true;
-                                    self.playlist[self.playing].pause();
-                                    self.bgm_danger.set_repeat(true);
-                                    self.bgm_danger.play();
-                                    break;
-                                }
-                            }
-                        }
+
+                // if this is legal move for me, i try to send to other player
+                if result {
+                    self.new_board = board;
+                    // send move to stream A1B2P[char; 64] (string och sedan .as_bytes())
+                    let mut send_board = String::new();
+                    let pieces = ["p","r","n","b","q","k"]; // easily convert number to piece
+                    for i in 0..64 {
+                        let p = piece_at(&self.board, i as usize) as i32;
+                        if p == -1 {send_board+=" "}
+                        else if p/6 == 0 {send_board+=pieces[p as usize];}
+                        else {send_board+=&(pieces[(p%6) as usize].to_uppercase())};
                     }
-                    self.black_stalemate = true;
-                    self.white_stalemate = true;
-                    for mv in find_legal_moves(&mut self.board, 0) {
-                        if !self.black_stalemate && !self.white_stalemate {break}
-                        let uci = move_to_uci(mv);
-                        let col = convert.iter().position(|&c| c == (uci[0..1]).parse().unwrap()).unwrap();
-                        let row: usize = (&uci[1..2]).parse().unwrap();
-                        if piece_at(&self.board, (8-row)*8+col) < 6 && piece_at(&self.board, (8-row)*8+col) != -1 {self.white_stalemate = false;} // if white piece can move
-                        else if piece_at(&self.board, (8-row)*8+col) > 5 {self.black_stalemate = false;} // if black piece can move
-                    }
-                    self.sfx_move.play(); // play sound effect lastly
+                    let send = uci.to_uppercase()+"Q"+&send_board+"\n";
+                    self.stream.write_all(send.as_bytes())?; // retry to write until all                
                 }
             }
         }
@@ -417,12 +541,63 @@ impl ggez::event::EventHandler for State {
     }
 }
 
+fn connect_game(ip: &str) -> Result<(TcpStream, i32), Error> {
+    let mut stream = TcpStream::connect(ip).expect("connecting error");
+    let mut buffer: [u8; 2] = [0; 2];
+    stream.read(&mut buffer).expect("reading error");
+    stream.set_nonblocking(true).expect("noneblocking error");
+    println!("{:?}", buffer);
+    // color of the client
+    if buffer[0] == b'W' {return Ok((stream, 0))}
+    else if buffer[0] == b'B' {return Ok((stream, 1))}
+    Err(Error)
+}
+
+fn host_game(color: &str) -> Result<(TcpStream, i32), Error> {
+    let listener: TcpListener = TcpListener::bind("127.0.0.1:6767").expect("binding error"); 
+    let (mut stream, address) = listener.accept().expect("accept listener error");
+    stream.set_nonblocking(true).expect("noneblocking error");
+    if color == "--W"{
+        stream.write(b"W\n").expect("writing error"); 
+        let my_color=1;
+        return Ok((stream, my_color))
+    }
+    else if color == "--B" {
+        stream.write(b"B\n").expect("writing error");
+        let my_color =0;
+        return Ok((stream, my_color))
+    }
+    Err(Error)
+}
+
+// TcpStream  .write(bytes/&[u8]) or writeall?
+//            .read(bytes)
+// how to make string to &[u8] in rust?
+
 pub fn main() -> GameResult {
     let c = conf::Conf::new();
     let (mut ctx, event_loop) = ContextBuilder::new("chessdew valley", "tingxuan")
         .default_conf(c)
         .build()?; // ? means if error, return right away
 
-    let state = State::new(&mut ctx)?;
-    event::run(ctx, event_loop, state) // return gameresult from this
-}
+    let args: Vec<String> = env::args().collect();
+    if args[1] == "--host" {
+        let (stream, my_color) = host_game(&args[2]).expect("host game error");
+        let state = State::new(&mut ctx, stream, my_color)?;
+        return event::run(ctx, event_loop, state)
+    }
+    
+    if args[1] == "--connect" { 
+        let (stream, my_color) = connect_game(&args[2]).expect("error");
+        let state = State::new(&mut ctx, stream, my_color)?;
+        return event::run(ctx, event_loop, state)
+    }
+    println!("{:?}",args);
+
+    // let state = State::new(&mut ctx)?;
+    // event::run(ctx, event_loop, state) // return gameresult from this
+    Ok(())
+} 
+
+// when hosting: cargo run -- --host --[color of opponent]
+// when connecting: cargo run -- --connect
