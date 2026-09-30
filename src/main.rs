@@ -194,7 +194,7 @@ impl ggez::event::EventHandler for State {
         // try to read response
         let mut data = [0u8; 128]; // all set to 0
         match self.stream.read(&mut data) {
-            Ok(n) => {
+            Ok(n) => { 
                 for i in 0..n {
                     if data[i] == b'\n' { // if the message is full
                         if self.buffer == "OK" || self.buffer == "CHECKMATE" || self.buffer == "STALEMATE" {
@@ -261,6 +261,8 @@ impl ggez::event::EventHandler for State {
                             let (result, board) = make_move(self.board.clone(), &uci); 
                             // if the move is legal, send OK
                             if result {
+                                self.board=board; 
+                                self.turn = (self.turn+1)%2;
                                 self.black_check = false; // reset check values
                                 self.white_check = false;
                                 let convert: [char; 8] = ['a','b','c','d','e','f','g','h'];
@@ -320,9 +322,7 @@ impl ggez::event::EventHandler for State {
                                 else {
                                     self.stream.write(b"OK\n")?;
                                 }
-                                self.board=board; 
                                 self.sfx_move.play();
-                                self.turn = (self.turn+1)%2;
                             }
                             // else illegal, REJECT
                             else {self.stream.write(b"REJECT\n")?;}
@@ -376,8 +376,16 @@ impl ggez::event::EventHandler for State {
         // highlight the chosen square
         if self.from_square != None {
             let pos = self.from_square.unwrap();
-            let col = (pos%8) as f32;
-            let row = (pos/8) as f32;
+            let col: f32;
+            let row: f32;
+            if self.my_color == 0 { // if im white
+                col = (pos%8) as f32;
+                row = (pos/8) as f32;
+            }
+            else {
+                col = 7.0-(pos%8) as f32;
+                row = 7.0-(pos/8) as f32;
+            }
             self.square_highlight(&mut canvas, ctx, board_x + col * squ, board_y + row * squ, squ,0.0,0.0,100.0,0.8);
         }
 
@@ -385,8 +393,16 @@ impl ggez::event::EventHandler for State {
         if self.white_check {
             for i in 0..64 {
                 let p = piece_at(&self.board, i as usize) as f32;
-                let col = (i%8) as f32;
-                let row = (i/8) as f32;
+                let col: f32;
+                let row: f32;
+                if self.my_color == 0 {
+                    col = (i%8) as f32;
+                    row = (i/8) as f32;
+                }
+                else {
+                    col = 7.0-(i%8) as f32;
+                    row = 7.0-(i/8) as f32;
+                }
                 if p == 5.0 {
                     self.square_highlight(&mut canvas, ctx, board_x + col * squ, board_y + row * squ, squ,100.0,0.0,10.0,0.6);
                 }
@@ -395,8 +411,16 @@ impl ggez::event::EventHandler for State {
         else if self.black_check {
             for i in 0..64 {
                 let p = piece_at(&self.board, i as usize) as f32;
-                let col = (i%8) as f32;
-                let row = (i/8) as f32;
+                let col: f32;
+                let row: f32;
+                if self.my_color == 0 {
+                    col = (i%8) as f32;
+                    row = (i/8) as f32;
+                }
+                else {
+                    col = 7.0-(i%8) as f32;
+                    row = 7.0-(i/8) as f32;
+                }      
                 if p == 11.0 {
                     self.square_highlight(&mut canvas, ctx, board_x + col * squ, board_y + row * squ, squ,100.0,0.0,10.0,0.6);
                 }
@@ -411,8 +435,16 @@ impl ggez::event::EventHandler for State {
             let p = piece_at(&self.board, i as usize) as f32;
             let color = (p/6.0).floor();
             let piece = 5.0-p%6.0;
-            let col = (i%8) as f32;
-            let row = (i/8) as f32;
+            let col: f32;
+            let row: f32;
+            if self.my_color == 0 {
+                col = (i%8) as f32;
+                row = (i/8) as f32;
+            }
+            else {
+                col = 7.0-(i%8) as f32;
+                row = 7.0-(i/8) as f32;
+            }
             let x = board_x + col * squ;
             let y = board_y + row * squ;
             self.draw_piece(&mut canvas, color, piece, x, y, squ);
@@ -433,8 +465,15 @@ impl ggez::event::EventHandler for State {
 
                 // if this legal move is for the piece we selected
                 if &uci[0..2] == format!("{}{}",convert[col0],8-row0) {
-                    let x = board_x+29.0 + (col1 as f32) * squ;
-                    let y = board_y+33.0 + (8.0 - row1) * squ;
+                    let (x,y): (f32, f32);
+                    if self.my_color == 0 {
+                        x = board_x+29.0 + (col1 as f32) * squ;
+                        y = board_y+33.0 + (8.0 - row1) * squ;
+                    }
+                    else {
+                        x = board_x+29.0 + (7.0-col1 as f32) * squ;
+                        y = board_y+33.0 + (row1-1.0) * squ;
+                    }
                     self.draw_jumino(&mut canvas, x, y);
                 }
             }
@@ -492,10 +531,19 @@ impl ggez::event::EventHandler for State {
             if mouse_posisiton.x < board_x || mouse_posisiton.y < board_y || mouse_posisiton.x > board_x+imgb_width || mouse_posisiton.y > board_y+imgb_width {
                 return Ok(());
             }
-           
+            
+            let col: f32;
+            let row: f32;
             // col and row of the mouse click
-            let col = ((mouse_posisiton.x - board_x)/ (imgb_width/8.0)).floor();
-            let row = ((mouse_posisiton.y - board_y)/ (imgb_width/8.0)).floor();
+            if self.my_color == 0 { // if im white
+                col = ((mouse_posisiton.x - board_x)/ (imgb_width/8.0)).floor();
+                row = ((mouse_posisiton.y - board_y)/ (imgb_width/8.0)).floor();
+            }
+            else { // im black
+                col = 7.0 - ((mouse_posisiton.x - board_x)/ (imgb_width/8.0)).floor();
+                row = 7.0 - ((mouse_posisiton.y - board_y)/ (imgb_width/8.0)).floor();
+            }
+            
             let piece = piece_at(&self.board, (row*8.0+col) as usize);
 
             // if no selected square, or selected square before was my piece
@@ -554,7 +602,7 @@ fn connect_game(ip: &str) -> Result<(TcpStream, i32), Error> {
 }
 
 fn host_game(color: &str) -> Result<(TcpStream, i32), Error> {
-    let listener: TcpListener = TcpListener::bind("127.0.0.1:6767").expect("binding error"); 
+    let listener: TcpListener = TcpListener::bind("0.0.0.0:6767").expect("binding error"); 
     let (mut stream, address) = listener.accept().expect("accept listener error");
     stream.set_nonblocking(true).expect("noneblocking error");
     if color == "--W"{
@@ -593,10 +641,7 @@ pub fn main() -> GameResult {
         let state = State::new(&mut ctx, stream, my_color)?;
         return event::run(ctx, event_loop, state)
     }
-    println!("{:?}",args);
-
-    // let state = State::new(&mut ctx)?;
-    // event::run(ctx, event_loop, state) // return gameresult from this
+    // println!("{:?}",args);
     Ok(())
 } 
 
