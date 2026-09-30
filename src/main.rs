@@ -364,14 +364,14 @@ impl ggez::event::EventHandler for State {
                 .scale([1.0,1.0])
         );
         // draw letter to the left
-        let imgl_width = self.img_letter.width() as f32;
-        let imgl_height = self.img_letter.height() as f32;
-        canvas.draw (
-            &self.img_letter,
-            graphics::DrawParam::new()
-                .dest([(s_width-imgl_width)/17.0,(s_height-imgl_height)/2.0])
-                .scale([1.0,1.0])
-        );
+        // let imgl_width = self.img_letter.width() as f32;
+        // let imgl_height = self.img_letter.height() as f32;
+        // canvas.draw (
+            // &self.img_letter,
+            // graphics::DrawParam::new()
+                // .dest([(s_width-imgl_width)/17.0,(s_height-imgl_height)/2.0])
+                // .scale([1.0,1.0])
+        // );
 
         // highlight the chosen square
         if self.from_square != None {
@@ -527,10 +527,10 @@ impl ggez::event::EventHandler for State {
                     let mut send_board = String::new();
                     let pieces = ["p","r","n","b","q","k"]; // easily convert number to piece
                     for i in 0..64 {
-                        let p = piece_at(&self.board, i as usize) as i32;
+                        let p = piece_at(&self.new_board, i as usize) as i32;
                         if p == -1 {send_board+=" "}
-                        else if p/6 == 0 {send_board+=pieces[p as usize];}
-                        else {send_board+=&(pieces[(p%6) as usize].to_uppercase())};
+                        else if p/6 == 0 {send_board+=&(pieces[p as usize]).to_uppercase();}
+                        else {send_board+=&(pieces[(p%6) as usize])};
                     }
                     let send = uci.to_uppercase()+"Q"+&send_board+"\n";
                     self.stream.write_all(send.as_bytes())?; // retry to write until all                
@@ -578,6 +578,7 @@ pub fn main() -> GameResult {
     let c = conf::Conf::new();
     let (mut ctx, event_loop) = ContextBuilder::new("chessdew valley", "tingxuan")
         .default_conf(c)
+        .window_mode(conf::WindowMode::default().resizable(true))
         .build()?; // ? means if error, return right away
 
     let args: Vec<String> = env::args().collect();
