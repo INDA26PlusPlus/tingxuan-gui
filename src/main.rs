@@ -602,7 +602,7 @@ fn connect_game(ip: &str) -> Result<(TcpStream, i32), Error> {
 }
 
 fn host_game(color: &str) -> Result<(TcpStream, i32), Error> {
-    let listener: TcpListener = TcpListener::bind("0.0.0.0:6767").expect("binding error"); 
+    let listener: TcpListener = TcpListener::bind("127.0.0.1:6767").expect("binding error"); 
     let (mut stream, address) = listener.accept().expect("accept listener error");
     stream.set_nonblocking(true).expect("noneblocking error");
     if color == "--W"{
@@ -623,10 +623,13 @@ fn host_game(color: &str) -> Result<(TcpStream, i32), Error> {
 // how to make string to &[u8] in rust?
 
 pub fn main() -> GameResult {
+    let resource_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets");
+
     let c = conf::Conf::new();
     let (mut ctx, event_loop) = ContextBuilder::new("chessdew valley", "tingxuan")
         .default_conf(c)
         .window_mode(conf::WindowMode::default().resizable(true))
+        .add_resource_path(resource_dir) // maps "/" to assets folder
         .build()?; // ? means if error, return right away
 
     let args: Vec<String> = env::args().collect();
@@ -646,4 +649,4 @@ pub fn main() -> GameResult {
 } 
 
 // when hosting: cargo run -- --host --[color of opponent]
-// when connecting: cargo run -- --connect
+// when connecting: cargo run -- --connect [ip]
